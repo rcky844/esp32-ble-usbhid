@@ -7,9 +7,6 @@
 #ifndef _HID_COMMON_H_
 #define _HID_COMMON_H_
 
-/* Defines the enabled device role */
-#define CONFIG_PROJECT_HID_DEVICE_ROLE 0
-
 typedef struct {
 #if CONFIG_PROJECT_HID_DEVICE_ROLE == 1
     char c;
