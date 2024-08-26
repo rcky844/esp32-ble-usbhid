@@ -22,10 +22,12 @@
 #include "usb/hid_usage_keyboard.h"
 #include "usb/hid_usage_mouse.h"
 
+#include "hid_common.h"
+
 /* GPIO Pin number for quit from example logic */
 #define APP_QUIT_PIN                GPIO_NUM_0
 
-static const char *TAG = "example";
+static const char *TAG = "hid_host";
 
 QueueHandle_t app_event_queue = NULL;
 
@@ -67,6 +69,7 @@ static const char *hid_proto_name_str[] = {
     "MOUSE"
 };
 
+#if CONFIG_PROJECT_HID_DEVICE_ROLE == 1
 /**
  * @brief Key event
  */
@@ -78,11 +81,6 @@ typedef struct {
     uint8_t modifier;
     uint8_t key_code;
 } key_event_t;
-
-/* Main char symbol for ENTER key */
-#define KEYBOARD_ENTER_MAIN_CHAR    '\r'
-/* When set to 1 pressing ENTER will be extending with LineFeed during serial debug output */
-#define KEYBOARD_ENTER_LF_EXTEND    1
 
 /**
  * @brief Scancode to ascii table
@@ -128,10 +126,10 @@ const uint8_t keycode2ascii [57][2] = {
     {'8', '*'}, /* HID_KEY_8               */
     {'9', '('}, /* HID_KEY_9               */
     {'0', ')'}, /* HID_KEY_0               */
-    {KEYBOARD_ENTER_MAIN_CHAR, KEYBOARD_ENTER_MAIN_CHAR}, /* HID_KEY_ENTER           */
+    {'\n', '\n'}, /* HID_KEY_ENTER           */
     {0, 0}, /* HID_KEY_ESC             */
     {'\b', 0}, /* HID_KEY_DEL             */
-    {0, 0}, /* HID_KEY_TAB             */
+    {'\t', '\t'}, /* HID_KEY_TAB             */
     {' ', ' '}, /* HID_KEY_SPACE           */
     {'-', '_'}, /* HID_KEY_MINUS           */
     {'=', '+'}, /* HID_KEY_EQUAL           */
@@ -146,29 +144,6 @@ const uint8_t keycode2ascii [57][2] = {
     {'.', '>'}, /* HID_KEY_GREATER         */
     {'/', '?'} /* HID_KEY_SLASH           */
 };
-
-/**
- * @brief Makes new line depending on report output protocol type
- *
- * @param[in] proto Current protocol to output
- */
-static void hid_print_new_device_report_header(hid_protocol_t proto)
-{
-    static hid_protocol_t prev_proto_output = -1;
-
-    if (prev_proto_output != proto) {
-        prev_proto_output = proto;
-        printf("\r\n");
-        if (proto == HID_PROTOCOL_MOUSE) {
-            printf("Mouse\r\n");
-        } else if (proto == HID_PROTOCOL_KEYBOARD) {
-            printf("Keyboard\r\n");
-        } else {
-            printf("Generic\r\n");
-        }
-        fflush(stdout);
-    }
-}
 
 /**
  * @brief HID Keyboard modifier verification for capitalization application (right or left shift)
@@ -221,13 +196,9 @@ static inline bool hid_keyboard_get_char(uint8_t modifier,
 static inline void hid_keyboard_print_char(unsigned int key_char)
 {
     if (!!key_char) {
-        putchar(key_char);
-#if (KEYBOARD_ENTER_LF_EXTEND)
-        if (KEYBOARD_ENTER_MAIN_CHAR == key_char) {
-            putchar('\n');
-        }
-#endif // KEYBOARD_ENTER_LF_EXTEND
-        fflush(stdout);
+        ble_device_data bdata;
+        bdata.c = key_char;
+        ble_device_callback(bdata);
     }
 }
 
@@ -240,8 +211,6 @@ static inline void hid_keyboard_print_char(unsigned int key_char)
 static void key_event_callback(key_event_t *key_event)
 {
     unsigned char key_char;
-
-    hid_print_new_device_report_header(HID_PROTOCOL_KEYBOARD);
 
     if (KEY_STATE_PRESSED == key_event->state) {
         if (hid_keyboard_get_char(key_event->modifier,
@@ -312,6 +281,21 @@ static void hid_host_keyboard_report_callback(const uint8_t *const data, const i
 
     memcpy(prev_keys, &kb_report->key, HID_KEYBOARD_KEY_MAX);
 }
+#else
+static void hid_host_keyboard_report_callback(const uint8_t *const data, const int length)
+{
+    ESP_LOGE(TAG, "Support for keyboard is not enabled.");
+};
+#endif
+
+#if CONFIG_PROJECT_HID_DEVICE_ROLE == 2
+typedef struct {
+    uint8_t button;
+    int8_t _unknown;
+    int16_t x_displacement;
+    int16_t y_displacement;
+    int8_t wheel;
+} mouse_data;
 
 /**
  * @brief USB HID Host Mouse Interface report callback handler
@@ -321,27 +305,37 @@ static void hid_host_keyboard_report_callback(const uint8_t *const data, const i
  */
 static void hid_host_mouse_report_callback(const uint8_t *const data, const int length)
 {
-    hid_mouse_input_report_boot_t *mouse_report = (hid_mouse_input_report_boot_t *)data;
-
-    if (length < sizeof(hid_mouse_input_report_boot_t)) {
+    if (length != 7) {
         return;
     }
+    mouse_data *mdata = (mouse_data *) data;
+    ble_device_data bdata;
 
-    static int x_pos = 0;
-    static int y_pos = 0;
+    bdata.buttons = mdata->button;
+    if (mdata->x_displacement > INT8_MAX) {
+        bdata.dx = INT8_MAX;
+    } else if (mdata->x_displacement < INT8_MIN) {
+        bdata.dx = INT8_MIN;
+    } else {
+        bdata.dx = (int8_t) mdata->x_displacement;
+    }
+    if (mdata->y_displacement > INT8_MAX) {
+        bdata.dy = INT8_MAX;
+    } else if (mdata->y_displacement < INT8_MIN) {
+        bdata.dy = INT8_MIN;
+    } else {
+        bdata.dy = (int8_t) mdata->y_displacement;
+    }
+    bdata.wheel = -mdata->wheel;
 
-    // Calculate absolute position from displacement
-    x_pos += mouse_report->x_displacement;
-    y_pos += mouse_report->y_displacement;
-
-    hid_print_new_device_report_header(HID_PROTOCOL_MOUSE);
-
-    printf("X: %06d\tY: %06d\t|%c|%c|\r",
-           x_pos, y_pos,
-           (mouse_report->buttons.button1 ? 'o' : ' '),
-           (mouse_report->buttons.button2 ? 'o' : ' '));
-    fflush(stdout);
+    ble_device_callback(bdata);
 }
+#else
+static void hid_host_mouse_report_callback(const uint8_t *const data, const int length)
+{
+    ESP_LOGE(TAG, "Support for mouse is not enabled.");
+};
+#endif
 
 /**
  * @brief USB HID Host Generic Interface report callback handler
@@ -353,11 +347,10 @@ static void hid_host_mouse_report_callback(const uint8_t *const data, const int 
  */
 static void hid_host_generic_report_callback(const uint8_t *const data, const int length)
 {
-    hid_print_new_device_report_header(HID_PROTOCOL_NONE);
-    for (int i = 0; i < length; i++) {
-        printf("%02X", data[i]);
-    }
-    putchar('\r');
+    //for (int i = 0; i < length; i++) {
+    //    printf("%02X", data[i]);
+    //}
+    ESP_LOGW(TAG, "USB HID Host Generic Interface is not implemented.");
 }
 
 /**
@@ -530,11 +523,11 @@ void hid_host_device_callback(hid_host_device_handle_t hid_device_handle,
     }
 }
 
-void app_main(void)
+void usbhid_init(void)
 {
     BaseType_t task_created;
     app_event_queue_t evt_queue;
-    ESP_LOGI(TAG, "HID Host example");
+    ESP_LOGI(TAG, "HID Host start");
 
     // Init BOOT button: Pressing the button simulates app request to exit
     // It will disconnect the USB device and uninstall the HID driver and USB Host Lib

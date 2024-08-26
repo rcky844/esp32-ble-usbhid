@@ -37,7 +37,9 @@
 #include "esp_hidd.h"
 #include "esp_hid_gap.h"
 
-static const char *TAG = "HID_DEV_DEMO";
+#include "hid_common.h"
+
+static const char *TAG = "HID_DEV";
 
 typedef struct
 {
@@ -50,66 +52,7 @@ typedef struct
 #if CONFIG_BT_BLE_ENABLED || CONFIG_BT_NIMBLE_ENABLED
 static local_param_t s_ble_hid_param = {0};
 
-const unsigned char mediaReportMap[] = {
-    0x05, 0x0C,        // Usage Page (Consumer)
-    0x09, 0x01,        // Usage (Consumer Control)
-    0xA1, 0x01,        // Collection (Application)
-    0x85, 0x03,        //   Report ID (3)
-    0x09, 0x02,        //   Usage (Numeric Key Pad)
-    0xA1, 0x02,        //   Collection (Logical)
-    0x05, 0x09,        //     Usage Page (Button)
-    0x19, 0x01,        //     Usage Minimum (0x01)
-    0x29, 0x0A,        //     Usage Maximum (0x0A)
-    0x15, 0x01,        //     Logical Minimum (1)
-    0x25, 0x0A,        //     Logical Maximum (10)
-    0x75, 0x04,        //     Report Size (4)
-    0x95, 0x01,        //     Report Count (1)
-    0x81, 0x00,        //     Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0xC0,              //   End Collection
-    0x05, 0x0C,        //   Usage Page (Consumer)
-    0x09, 0x86,        //   Usage (Channel)
-    0x15, 0xFF,        //   Logical Minimum (-1)
-    0x25, 0x01,        //   Logical Maximum (1)
-    0x75, 0x02,        //   Report Size (2)
-    0x95, 0x01,        //   Report Count (1)
-    0x81, 0x46,        //   Input (Data,Var,Rel,No Wrap,Linear,Preferred State,Null State)
-    0x09, 0xE9,        //   Usage (Volume Increment)
-    0x09, 0xEA,        //   Usage (Volume Decrement)
-    0x15, 0x00,        //   Logical Minimum (0)
-    0x75, 0x01,        //   Report Size (1)
-    0x95, 0x02,        //   Report Count (2)
-    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0x09, 0xE2,        //   Usage (Mute)
-    0x09, 0x30,        //   Usage (Power)
-    0x09, 0x83,        //   Usage (Recall Last)
-    0x09, 0x81,        //   Usage (Assign Selection)
-    0x09, 0xB0,        //   Usage (Play)
-    0x09, 0xB1,        //   Usage (Pause)
-    0x09, 0xB2,        //   Usage (Record)
-    0x09, 0xB3,        //   Usage (Fast Forward)
-    0x09, 0xB4,        //   Usage (Rewind)
-    0x09, 0xB5,        //   Usage (Scan Next Track)
-    0x09, 0xB6,        //   Usage (Scan Previous Track)
-    0x09, 0xB7,        //   Usage (Stop)
-    0x15, 0x01,        //   Logical Minimum (1)
-    0x25, 0x0C,        //   Logical Maximum (12)
-    0x75, 0x04,        //   Report Size (4)
-    0x95, 0x01,        //   Report Count (1)
-    0x81, 0x00,        //   Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0x09, 0x80,        //   Usage (Selection)
-    0xA1, 0x02,        //   Collection (Logical)
-    0x05, 0x09,        //     Usage Page (Button)
-    0x19, 0x01,        //     Usage Minimum (0x01)
-    0x29, 0x03,        //     Usage Maximum (0x03)
-    0x15, 0x01,        //     Logical Minimum (1)
-    0x25, 0x03,        //     Logical Maximum (3)
-    0x75, 0x02,        //     Report Size (2)
-    0x81, 0x00,        //     Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0xC0,              //   End Collection
-    0x81, 0x03,        //   Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0xC0,              // End Collection
-};
-#if CONFIG_EXAMPLE_HID_DEVICE_ROLE && CONFIG_EXAMPLE_HID_DEVICE_ROLE == 3
+#if CONFIG_PROJECT_HID_DEVICE_ROLE == 2
 const unsigned char mouseReportMap[] = {
     0x05, 0x01,                    // USAGE_PAGE (Generic Desktop)
     0x09, 0x02,                    // USAGE (Mouse)
@@ -144,7 +87,7 @@ const unsigned char mouseReportMap[] = {
     0xc0                           // END_COLLECTION
 };
 // send the buttons, change in x, and change in y
-void send_mouse(uint8_t buttons, char dx, char dy, char wheel)
+void send_mouse(uint8_t buttons, int8_t dx, int8_t dy, int8_t wheel)
 {
     static uint8_t buffer[4] = {0};
     buffer[0] = buttons;
@@ -153,55 +96,9 @@ void send_mouse(uint8_t buttons, char dx, char dy, char wheel)
     buffer[3] = wheel;
     esp_hidd_dev_input_set(s_ble_hid_param.hid_dev, 0, 0, buffer, 4);
 }
-
-void ble_hid_demo_task_mouse(void *pvParameters)
-{
-    static const char* help_string = "########################################################################\n"\
-    "BT hid mouse demo usage:\n"\
-    "You can input these value to simulate mouse: 'q', 'w', 'e', 'a', 's', 'd', 'h'\n"\
-    "q -- click the left key\n"\
-    "w -- move up\n"\
-    "e -- click the right key\n"\
-    "a -- move left\n"\
-    "s -- move down\n"\
-    "d -- move right\n"\
-    "h -- show the help\n"\
-    "########################################################################\n";
-    printf("%s\n", help_string);
-    char c;
-    while (1) {
-        c = fgetc(stdin);
-        switch (c) {
-        case 'q':
-            send_mouse(1, 0, 0, 0);
-            break;
-        case 'w':
-            send_mouse(0, 0, -10, 0);
-            break;
-        case 'e':
-            send_mouse(2, 0, 0, 0);
-            break;
-        case 'a':
-            send_mouse(0, -10, 0, 0);
-            break;
-        case 's':
-            send_mouse(0, 0, 10, 0);
-            break;
-        case 'd':
-            send_mouse(0, 10, 0, 0);
-            break;
-        case 'h':
-            printf("%s\n", help_string);
-            break;
-        default:
-            break;
-        }
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-    }
-}
 #endif
 
-#if CONFIG_EXAMPLE_HID_DEVICE_ROLE && CONFIG_EXAMPLE_HID_DEVICE_ROLE == 2
+#if CONFIG_PROJECT_HID_DEVICE_ROLE == 1
 #define CASE(a, b, c)  \
                 case a: \
 				buffer[0] = b;  \
@@ -340,38 +237,14 @@ void send_keyboard(char c)
     memset(buffer, 0, sizeof(uint8_t) * 8);
     esp_hidd_dev_input_set(s_ble_hid_param.hid_dev, 0, 1, buffer, 8);
 }
-
-void ble_hid_demo_task_kbd(void *pvParameters)
-{
-    static const char* help_string = "########################################################################\n"\
-                                      "BT hid keyboard demo usage:\n"\
-                                      "########################################################################\n";
-                                    /* TODO : Add support for function keys and ctrl, alt, esc, etc. */
-    printf("%s\n", help_string);
-    char c;
-    while (1) {
-        c = fgetc(stdin);
-
-        if(c != 255) {
-            send_keyboard(c);
-        }
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-    }
-}
 #endif
 static esp_hid_raw_report_map_t ble_report_maps[] = {
-#if !CONFIG_BT_NIMBLE_ENABLED || CONFIG_EXAMPLE_HID_DEVICE_ROLE == 1
-    /* This block is compiled for bluedroid as well */
-    {
-        .data = mediaReportMap,
-        .len = sizeof(mediaReportMap)
-    }
-#elif CONFIG_EXAMPLE_HID_DEVICE_ROLE && CONFIG_EXAMPLE_HID_DEVICE_ROLE == 2
+#if CONFIG_PROJECT_HID_DEVICE_ROLE == 1
     {
         .data = keyboardReportMap,
         .len = sizeof(keyboardReportMap)
     },
-#elif CONFIG_EXAMPLE_HID_DEVICE_ROLE && CONFIG_EXAMPLE_HID_DEVICE_ROLE == 3
+#elif CONFIG_PROJECT_HID_DEVICE_ROLE == 2
     {
         .data = mouseReportMap,
         .len = sizeof(mouseReportMap)
@@ -383,9 +256,9 @@ static esp_hid_device_config_t ble_hid_config = {
     .vendor_id          = 0x16C0,
     .product_id         = 0x05DF,
     .version            = 0x0100,
-#if CONFIG_EXAMPLE_HID_DEVICE_ROLE == 2
+#if CONFIG_PROJECT_HID_DEVICE_ROLE == 1
     .device_name        = "ESP Keyboard",
-#elif CONFIG_EXAMPLE_HID_DEVICE_ROLE == 3
+#elif CONFIG_PROJECT_HID_DEVICE_ROLE == 2
     .device_name        = "ESP Mouse",
 #else
     .device_name        = "ESP BLE HID2",
@@ -547,50 +420,12 @@ void esp_hidd_send_consumer_value(uint8_t key_cmd, bool key_pressed)
     return;
 }
 
-#if !CONFIG_BT_NIMBLE_ENABLED || CONFIG_EXAMPLE_HID_DEVICE_ROLE == 1
-void ble_hid_demo_task(void *pvParameters)
-{
-    static bool send_volum_up = false;
-    while (1) {
-        ESP_LOGI(TAG, "Send the volume");
-        if (send_volum_up) {
-            esp_hidd_send_consumer_value(HID_CONSUMER_VOLUME_UP, true);
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-            esp_hidd_send_consumer_value(HID_CONSUMER_VOLUME_UP, false);
-        } else {
-            esp_hidd_send_consumer_value(HID_CONSUMER_VOLUME_DOWN, true);
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-            esp_hidd_send_consumer_value(HID_CONSUMER_VOLUME_DOWN, false);
-        }
-        send_volum_up = !send_volum_up;
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-    }
-}
-#endif
-
 void ble_hid_task_start_up(void)
 {
     if (s_ble_hid_param.task_hdl) {
         // Task already exists
         return;
     }
-#if !CONFIG_BT_NIMBLE_ENABLED
-    /* Executed for bluedroid */
-    xTaskCreate(ble_hid_demo_task, "ble_hid_demo_task", 2 * 1024, NULL, configMAX_PRIORITIES - 3,
-                &s_ble_hid_param.task_hdl);
-#elif CONFIG_EXAMPLE_HID_DEVICE_ROLE == 1
-    xTaskCreate(ble_hid_demo_task, "ble_hid_demo_task", 3 * 1024, NULL, configMAX_PRIORITIES - 3,
-                &s_ble_hid_param.task_hdl);
-
-#elif CONFIG_EXAMPLE_HID_DEVICE_ROLE == 2
-    /* Nimble Specific */
-    xTaskCreate(ble_hid_demo_task_kbd, "ble_hid_demo_task_kbd", 3 * 1024, NULL, configMAX_PRIORITIES - 3,
-                &s_ble_hid_param.task_hdl);
-#elif CONFIG_EXAMPLE_HID_DEVICE_ROLE == 3
-    /* Nimble Specific */
-    xTaskCreate(ble_hid_demo_task_mouse, "ble_hid_demo_task_mouse", 3 * 1024, NULL, configMAX_PRIORITIES - 3,
-                &s_ble_hid_param.task_hdl);
-#endif
 }
 
 void ble_hid_task_shut_down(void)
@@ -725,55 +560,8 @@ void send_mouse(uint8_t buttons, char dx, char dy, char wheel)
     esp_hidd_dev_input_set(s_bt_hid_param.hid_dev, 0, 0, buffer, 4);
 }
 
-void bt_hid_demo_task(void *pvParameters)
-{
-    static const char* help_string = "########################################################################\n"\
-    "BT hid mouse demo usage:\n"\
-    "You can input these value to simulate mouse: 'q', 'w', 'e', 'a', 's', 'd', 'h'\n"\
-    "q -- click the left key\n"\
-    "w -- move up\n"\
-    "e -- click the right key\n"\
-    "a -- move left\n"\
-    "s -- move down\n"\
-    "d -- move right\n"\
-    "h -- show the help\n"\
-    "########################################################################\n";
-    printf("%s\n", help_string);
-    char c;
-    while (1) {
-        c = fgetc(stdin);
-        switch (c) {
-        case 'q':
-            send_mouse(1, 0, 0, 0);
-            break;
-        case 'w':
-            send_mouse(0, 0, -10, 0);
-            break;
-        case 'e':
-            send_mouse(2, 0, 0, 0);
-            break;
-        case 'a':
-            send_mouse(0, -10, 0, 0);
-            break;
-        case 's':
-            send_mouse(0, 0, 10, 0);
-            break;
-        case 'd':
-            send_mouse(0, 10, 0, 0);
-            break;
-        case 'h':
-            printf("%s\n", help_string);
-            break;
-        default:
-            break;
-        }
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-    }
-}
-
 void bt_hid_task_start_up(void)
 {
-    xTaskCreate(bt_hid_demo_task, "bt_hid_demo_task", 2 * 1024, NULL, configMAX_PRIORITIES - 3, &s_bt_hid_param.task_hdl);
     return;
 }
 
@@ -861,6 +649,19 @@ void ble_hid_device_host_task(void *param)
 void ble_store_config_init(void);
 #endif
 
+void ble_device_callback(ble_device_data bdata)
+{
+    ble_device_data pBdata = bdata;
+
+#if CONFIG_PROJECT_HID_DEVICE_ROLE == 1
+    send_keyboard(pBdata.c);
+#elif CONFIG_PROJECT_HID_DEVICE_ROLE == 2
+    send_mouse(pBdata.buttons, pBdata.dx, pBdata.dy, pBdata.wheel);
+#else
+    ESP_LOGW(TAG, "Device role is not implemented.");
+#endif
+}
+
 void app_main(void)
 {
     esp_err_t ret;
@@ -880,9 +681,9 @@ void app_main(void)
     ESP_ERROR_CHECK( ret );
 
 #if CONFIG_BT_BLE_ENABLED || CONFIG_BT_NIMBLE_ENABLED
-#if CONFIG_EXAMPLE_HID_DEVICE_ROLE == 2
+#if CONFIG_PROJECT_HID_DEVICE_ROLE == 1
     ret = esp_hid_ble_gap_adv_init(ESP_HID_APPEARANCE_KEYBOARD, ble_hid_config.device_name);
-#elif CONFIG_EXAMPLE_HID_DEVICE_ROLE == 3
+#elif CONFIG_PROJECT_HID_DEVICE_ROLE == 2
     ret = esp_hid_ble_gap_adv_init(ESP_HID_APPEARANCE_MOUSE, ble_hid_config.device_name);
 #else
     ret = esp_hid_ble_gap_adv_init(ESP_HID_APPEARANCE_GENERIC, ble_hid_config.device_name);
@@ -922,4 +723,7 @@ void app_main(void)
         ESP_LOGE(TAG, "esp_nimble_enable failed: %d", ret);
     }
 #endif
+
+    /* Finally, initialize USB HID Host */
+    usbhid_init();
 }

@@ -434,7 +434,7 @@ static void bt_gap_event_handler(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_para
         break;
     }
 
-#if (CONFIG_EXAMPLE_SSP_ENABLED == true)
+#if (CONFIG_PROJECT_SSP_ENABLED == true)
     case ESP_BT_GAP_CFM_REQ_EVT:
         ESP_LOGI(TAG, "BT GAP CFM_REQ_EVT Please compare the numeric value: %" PRIu32,
                  param->cfm_req.num_val);
@@ -459,7 +459,7 @@ static void bt_gap_event_handler(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_para
 static esp_err_t init_bt_gap(void)
 {
     esp_err_t ret;
-#if (CONFIG_EXAMPLE_SSP_ENABLED)
+#if (CONFIG_PROJECT_SSP_ENABLED)
     /* Set default parameters for Secure Simple Pairing */
     esp_bt_sp_param_t param_type = ESP_BT_SP_IOCAP_MODE;
     esp_bt_io_cap_t iocap = ESP_BT_IO_CAP_NONE;
@@ -971,7 +971,7 @@ static esp_err_t init_low_level(uint8_t mode)
     }
 
     esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
-#if (CONFIG_EXAMPLE_SSP_ENABLED == false)
+#if (CONFIG_PROJECT_SSP_ENABLED == false)
     bluedroid_cfg.ssp_en = false;
 #endif
     ret = esp_bluedroid_init_with_cfg(&bluedroid_cfg);
